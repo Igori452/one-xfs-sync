@@ -1,8 +1,6 @@
-#include "one-xfs-sync/аctor/actor.hpp"
+#include "one-xfs-sync/actor/actor.hpp"
 
-#include <boost/asio/post.hpp>
-
-void actor::process_next() 
+void actor::run_loop() 
 {
     message msg;
     {
@@ -26,28 +24,16 @@ void actor::send(message msg)
         mailbox_.push(std::move(msg));
     }
     cv_.notify_one();
-
-    boost::asio::post(executor_, [self = shared_from_this()](){
-        self->process_next();
-    });
 }
 
-void actor::start(boost::asio::any_io_executor e) 
+void actor::start() 
 {
     std::size_t mailbox_size = 0;
     {
         std::lock_guard lock(mutex_);
         if (running_) return;
-        executor_ = std::move(e);
         running_ = true;
-        mailbox_size = mailbox_.size();
-    }
-
-    for (std::size_t i = 0; i < mailbox_size; ++i) 
-    {
-        boost::asio::post(executor_, [self = shared_from_this()](){
-            self->process_next();
-        });
+        thread_ = std::jthread([this] { run_loop(); });
     }
 
     on_start();
@@ -60,6 +46,8 @@ void actor::stop()
         if (!running_) return;
         running_ = false;
     }
-
+    cv_.notify_all();
+    if (thread_.joinable()) thread_.join();
+    
     on_stop();
 }

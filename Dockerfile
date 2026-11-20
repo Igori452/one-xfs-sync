@@ -4,8 +4,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     gdb \
-    libboost-thread-dev \
-    libboost-system-dev \
+    liburing-dev \
+    libacl1-dev \
+    xfsprogs \
+    lvm2 \
+    fio \
     curl \
     ca-certificates \
     git \

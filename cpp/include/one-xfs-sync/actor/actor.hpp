@@ -14,7 +14,7 @@ using actor_ref_t = std::shared_ptr<actor>;
 class actor : public std::enable_shared_from_this<actor>
 {
     private:
-        void run_loop();
+        virtual void run_loop();
 
         std::queue<message> mailbox_;
         std::mutex mutex_;

@@ -23,6 +23,11 @@ void net_loop_destroy(net_loop_t* net_loop);
 
 void net_loop_wakeup(net_loop_t* net_loop);
 
+int net_loop_create_listen_socket(net_loop_t* net_loop, uint16_t port);
+int net_loop_accept(net_loop_t* net_loop, int listen_fd);
+
+int net_loop_send(net_loop_t* net_loop, int fd, const void* data, size_t len);
+
 bool net_loop_add_fd(net_loop_t* net_loop, int fd);
 bool net_loop_remove_fd(net_loop_t* net_loop, int fd);
 

@@ -1,34 +1,127 @@
 #pragma once
 
 #include <stdbool.h>
-#include <stddef.h>
+#include <sys/types.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * @brief Непрозрачный дескриптор контекста событийного цикла.
+ *
+ * Инкапсулирует системные дескрипторы epoll и eventfd, изолируя низкоуровневые
+ * системные вызовы ядра Linux от высокоуровневого кода на C++.
+ */
 typedef struct net_loop net_loop_t;
 
+/**
+ * @brief Типы событий, возвращаемых событийным циклом при выходе из ожидания.
+ */
 typedef enum 
 {
-    NET_EVENT_WAKEUP,
-    NET_EVENT_READ,
-    NET_EVENT_ERROR
+    NET_EVENT_WAKEUP,   ///< Сигнал принудительного пробуждения.
+    NET_EVENT_READ,     ///< Готовность сокета к чтению данных или приёму нового подключения (accept).
+    NET_EVENT_WRITE,    ///< Готовность буфера ядра сокета к записи (событие EPOLLOUT).
+    NET_EVENT_ERROR     ///< Ошибка сокета или разрыв соединения со стороны удалённого узла.
 } net_event_type_t;
 
+/**
+ * @brief Структура единичного события, передаваемого на уровень приложения.
+ */
 typedef struct
 {
-    net_event_type_t event_type;
-    int fd;
+    net_event_type_t event_type;    ///< Тип произошедшего события.
+    int fd;                         ///< Дескриптор сокета, породившего событие (для NET_EVENT_WAKEUP равен -1).
 } net_event_t;
 
+/**
+ * @brief Инициализирует экземпляр событийного цикла (создаёт epoll и привязывает eventfd).
+ * @return Указатель на созданный контекст net_loop_t или NULL при ошибке системного вызова.
+ */
 net_loop_t* net_loop_create(void);
+
+/**
+ * @brief Освобождает ресурсы событийного цикла и закрывает внутренние дескрипторы (epoll, eventfd).
+ * @param net_loop Указатель на контекст событийного цикла.
+ */
 void net_loop_destroy(net_loop_t* net_loop);
 
+/**
+ * @brief Потокобезопасно пробуждает спящий в net_loop_wait() поток через запись в eventfd.
+ * @param net_loop Указатель на контекст событийного цикла.
+ */
 void net_loop_wakeup(net_loop_t* net_loop);
 
+/**
+ * @brief Создаёт неблокирующий TCP-сокет, привязывает его к порту и регистрирует в epoll.
+ * @param net_loop Указатель на контекст событийного цикла.
+ * @param port     Номер порта в хостовом порядке байт.
+ * @return Дескриптор слушающего сокета или -1 при ошибке.
+ */
 int net_loop_create_listen_socket(net_loop_t* net_loop, uint16_t port);
+
+/**
+ * @brief Принимает входящее TCP-соединение в неблокирующем режиме (accept4) и регистрирует его в epoll.
+ * @param net_loop  Указатель на контекст событийного цикла.
+ * @param listen_fd Дескриптор слушающего сокета.
+ * @return Дескриптор принятого клиентского сокета или -1 при ошибке.
+ */
 int net_loop_accept(net_loop_t* net_loop, int listen_fd);
 
-int net_loop_send(net_loop_t* net_loop, int fd, const void* data, size_t len);
+/**
+ * @brief Выполняет попытку неблокирующей записи данных в сокет и автоматически управляет флагом EPOLLOUT.
+ *
+ * Если за один вызов переданы не все байты (или вернулся EAGAIN), активирует отслеживание EPOLLOUT
+ * для данного fd. При полной передаче указанного блока деактивирует EPOLLOUT.
+ *
+ * @param net_loop Указатель на контекст событийного цикла.
+ * @param fd       Дескриптор клиентского сокета.
+ * @param data     Указатель на буфер отправляемых данных.
+ * @param len      Размер отправляемых данных в байтах.
+ * @return Количество реально отправленных байт (>= 0, где 0 соответствует EAGAIN) или -1 при фатальной ошибке.
+ */
+ssize_t net_loop_try_send(net_loop_t* net_loop, int fd, const void* data, size_t len);
 
+/**
+ * @brief Выполняет попытку неблокирующего чтения доступных данных из сокета.
+ * @param fd  Дескриптор клиентского сокета.
+ * @param buf Указатель на приёмный буфер.
+ * @param len Максимальный размер читаемого блока в байтах.
+ * @return Количество прочитанных байт (> 0), 0 при отсутствии данных (EAGAIN) или -1 при ошибке.
+ */
+ssize_t net_loop_try_recv(int fd, void* buf, size_t len);
+
+/**
+ * @brief Регистрирует внешний файловый дескриптор в epoll на отслеживание событий чтения (EPOLLIN).
+ * @param net_loop Указатель на контекст событийного цикла.
+ * @param fd       Регистрируемый файловый дескриптор.
+ * @return true при успешной регистрации; false при ошибке.
+ */
 bool net_loop_add_fd(net_loop_t* net_loop, int fd);
+
+/**
+ * @brief Исключает файловый дескриптор из списка отслеживания epoll (без закрытия самого fd).
+ * @param net_loop Указатель на контекст событийного цикла.
+ * @param fd       Исключаемый файловый дескриптор.
+ * @return true при успешном удалении; false при ошибке.
+ */
 bool net_loop_remove_fd(net_loop_t* net_loop, int fd);
 
+/**
+ * @brief Блокирует поток до наступления сетевых событий, сигнала wakeup или истечения таймаута.
+ *
+ * Автоматически сбрасывает счётчик eventfd при получении NET_EVENT_WAKEUP и преобразует
+ * системные структуры epoll_event в платформонезависимый массив net_event_t.
+ *
+ * @param net_loop   Указатель на контекст событийного цикла.
+ * @param out_events Выходной буфер для заполнения произошедшими событиями.
+ * @param max_events Максимальная вместимость буфера out_events.
+ * @param timeout    Таймаут ожидания в миллисекундах (-1 для бесконечного ожидания, 0 для опроса без блокировки).
+ * @return Количество записанных в out_events событий (>= 0) или -1 при системной ошибке.
+ */
 int net_loop_wait(net_loop_t* net_loop, net_event_t* out_events, size_t max_events, int timeout);
+
+#ifdef __cplusplus
+}
+#endif

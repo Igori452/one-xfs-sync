@@ -1,6 +1,6 @@
 #include "one-xfs-sync/utils/net_dispatcher.hpp"
 
-net_dispatcher::net_dispatcher(net_loop_t* net_loop) : net_loop_(net_loop) {}
+net_dispatcher::net_dispatcher(net_loop_t* net_loop) noexcept : net_loop_(net_loop) {}
 
 bool net_dispatcher::send(int fd, std::span<const uint8_t> data)
 {
@@ -81,7 +81,7 @@ void net_dispatcher::clear_queue(int fd)
     out_queue_.erase(it);
 }
 
-bool net_dispatcher::has_pending(int fd) const
+bool net_dispatcher::has_pending(int fd) const noexcept
 {
     auto it = out_queue_.find(fd);
     if (net_loop_ == nullptr || fd < 0 || it == out_queue_.end())

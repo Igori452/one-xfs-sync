@@ -141,6 +141,8 @@ int net_loop_accept(net_loop_t* net_loop, int listen_fd)
     }
 
     struct epoll_event ev = {0};
+    ev.data.fd = client_fd;
+    ev.events = EPOLLIN | EPOLLRDHUP;
 
     if (epoll_ctl(net_loop->ep_fd, EPOLL_CTL_ADD, client_fd, &ev) < 0)
     {

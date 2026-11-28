@@ -280,7 +280,12 @@ int net_loop_wait(net_loop_t* net_loop, net_event_t* out_events, size_t max_even
 
             out_events[i].fd = -1;
             out_events[i].event_type = NET_EVENT_WAKEUP;
-        }        
+        }
+        else if (ev_flags & EPOLLIN)
+        {
+            out_events[i].fd = fd;
+            out_events[i].event_type = NET_EVENT_READ;
+        }
         else if (ev_flags & (EPOLLERR | EPOLLHUP | EPOLLRDHUP))
         {
             out_events[i].fd = fd;
@@ -290,11 +295,6 @@ int net_loop_wait(net_loop_t* net_loop, net_event_t* out_events, size_t max_even
         {
             out_events[i].fd = fd;
             out_events[i].event_type = NET_EVENT_WRITE;
-        }
-        else
-        {
-            out_events[i].fd = fd;
-            out_events[i].event_type = NET_EVENT_READ;
         }
     }
 
